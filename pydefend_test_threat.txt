@@ -1,0 +1,4 @@
+PYDEFEND_TEST_THREAT
+This is a harmless classroom test file for the PyDefend cybersecurity assessment prototype.
+It is intentionally detected by PyDefend as a SIMULATED HIGH-RISK signature.
+It is NOT malware and does not execute code.
