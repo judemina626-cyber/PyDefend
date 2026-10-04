@@ -1,0 +1,16 @@
+PYDEFEND - RENDER DEPLOYMENT
+
+1. Upload this PyDefend folder to a GitHub repository.
+2. In Render: New -> Web Service -> connect the GitHub repo.
+3. If render.yaml is detected, use the shown settings. Otherwise: 
+   Build Command: pip install -r requirements.txt
+   Start Command: gunicorn app:app
+4. Choose Free plan and Create Web Service.
+5. Wait for the deploy to finish. Render will provide an https://...onrender.com URL.
+6. Open that URL on the cellphone; no same-Wi-Fi requirement.
+
+Demo accounts:
+Admin: admin@pydefend.local / PyDefend123!
+Student: student@pydefend.local / Student123!
+
+Important: this prototype uses SQLite and local folders for uploads/reports/quarantine. On Render's free web service, the filesystem is not persistent, so uploaded files and database changes should not be treated as permanent. For a classroom demo this is okay; for permanent data, use a persistent database/storage service.
