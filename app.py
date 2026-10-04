@@ -9,7 +9,7 @@ DB_PATH = BASE_DIR / 'pydefend.db'
 UPLOAD_DIR = BASE_DIR / 'uploads'; REPORT_DIR = BASE_DIR / 'reports'; QUARANTINE_DIR = BASE_DIR / 'quarantine'
 for folder in (UPLOAD_DIR, REPORT_DIR, QUARANTINE_DIR): folder.mkdir(exist_ok=True)
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder=str(BASE_DIR / 'templates'), static_folder=str(BASE_DIR / 'static'))
 app.secret_key = os.environ.get('PYDEFEND_SECRET', 'pydefend-demo-secret-change-me')
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
 
@@ -181,10 +181,21 @@ def user_scan_rows(admin=False, limit=100):
 
 
 @app.context_processor
-def inject_globals(): return {'me':current_user(),'admin':is_admin()}
+def inject_globals():
+    try:
+        u = current_user()
+        return {'me': u, 'admin': bool(u and u['role'] == 'admin')}
+    except Exception:
+        return {'me': None, 'admin': False}
 
 @app.route('/')
-def index(): return redirect(url_for('dashboard')) if require_login() else render_template('login.html')
+def index():
+    try:
+        if session.get('user_id') and current_user() is not None:
+            return redirect(url_for('dashboard'))
+    except Exception:
+        session.clear()
+    return render_template('login.html')
 
 @app.route('/login',methods=['POST'])
 def login():
@@ -357,6 +368,11 @@ def health(): return jsonify({'app':'PyDefend','status':'online','time':datetime
 
 @app.errorhandler(413)
 def too_large(_): flash('File is too large. Maximum upload size is 10 MB.','error'); return redirect(url_for('scanner'))
+
+@app.errorhandler(500)
+def internal_error(error):
+    app.logger.exception('PyDefend internal error: %s', error)
+    return render_template('login.html', server_error='PyDefend encountered a temporary server error. Please refresh and try again.'), 500
 
 init_db()
 if __name__=='__main__': app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), threaded=True)
