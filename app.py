@@ -5,12 +5,17 @@ from datetime import datetime
 import sqlite3, hashlib, os, re, secrets, json
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / 'pydefend.db'
-UPLOAD_DIR = BASE_DIR / 'uploads'; REPORT_DIR = BASE_DIR / 'reports'; QUARANTINE_DIR = BASE_DIR / 'quarantine'
+# Render's filesystem is ephemeral but writable; /tmp avoids repository write surprises.
+DATA_ROOT = Path(os.environ.get('PYDEFEND_DATA_DIR', str(BASE_DIR / 'data')))
+DATA_ROOT.mkdir(parents=True, exist_ok=True)
+DB_PATH = DATA_ROOT / 'pydefend.db'
+UPLOAD_DIR = DATA_ROOT / 'uploads'; REPORT_DIR = DATA_ROOT / 'reports'; QUARANTINE_DIR = DATA_ROOT / 'quarantine'
 for folder in (UPLOAD_DIR, REPORT_DIR, QUARANTINE_DIR): folder.mkdir(exist_ok=True)
 
 app = Flask(__name__, template_folder=str(BASE_DIR / 'templates'), static_folder=str(BASE_DIR / 'static'))
-app.secret_key = os.environ.get('PYDEFEND_SECRET', 'pydefend-demo-secret-change-me')
+app.secret_key = os.environ.get('PYDEFEND_SECRET') or 'pydefend-demo-secret-change-me'
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
 
 ALLOWED_UPLOADS = {'.txt','.pdf','.doc','.docx','.docm','.xls','.xlsx','.ppt','.pptx','.pptm','.csv','.jpg','.jpeg','.png','.gif','.webp','.zip','.py','.html','.css','.js','.json','.xml'}
@@ -364,7 +369,15 @@ def report(scan_id):
     findings=json.loads(row['findings'] or '[]'); return render_template('report.html',scan=row,findings=findings,recommendations=recommendations(findings))
 
 @app.route('/api/health')
-def health(): return jsonify({'app':'PyDefend','status':'online','time':datetime.now().isoformat(timespec='seconds')})
+def health():
+    try:
+        conn = db()
+        conn.execute('SELECT 1').fetchone()
+        conn.close()
+        return jsonify({'app': 'PyDefend', 'status': 'online', 'time': datetime.now().isoformat(timespec='seconds')}), 200
+    except Exception as exc:
+        app.logger.exception('Health check database error: %s', exc)
+        return jsonify({'app': 'PyDefend', 'status': 'degraded', 'time': datetime.now().isoformat(timespec='seconds')}), 200
 
 @app.errorhandler(413)
 def too_large(_): flash('File is too large. Maximum upload size is 10 MB.','error'); return redirect(url_for('scanner'))
@@ -374,5 +387,12 @@ def internal_error(error):
     app.logger.exception('PyDefend internal error: %s', error)
     return render_template('login.html', server_error='PyDefend encountered a temporary server error. Please refresh and try again.'), 500
 
-init_db()
-if __name__=='__main__': app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), threaded=True)
+# Initialize once when the module is loaded by Render or Flask.
+try:
+    init_db()
+except Exception as exc:
+    app.logger.exception('PyDefend database initialization failed: %s', exc)
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', '5000'))
+    app.run(host='0.0.0.0', port=port, debug=False, threaded=True, use_reloader=False)
